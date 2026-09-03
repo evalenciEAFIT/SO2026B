@@ -1,11 +1,15 @@
-#define _GNU_SOURCE // Habilita definiciones específicas de Linux (como F_GETPIPE_SZ)
-#include <stdio.h>
-#include <stdlib.h>
-#include <fcntl.h>
-#include <unistd.h>
-#include <sys/wait.h>
-#include <sys/ioctl.h> // Para inspeccionar la memoria del Pipe
-#include <sched.h>     // Para inspeccionar en qué Core de la CPU estamos corriendo
+#define _GNU_SOURCE            // Habilita macros avanzadas del Kernel de Linux (ej. F_GETPIPE_SZ)
+
+// =========================================================================
+// LIBRERÍAS DEL SISTEMA Y SU PROPÓSITO
+// =========================================================================
+#include <stdio.h>             // Standard I/O: Provee printf(), sprintf() y perror() para la terminal.
+#include <stdlib.h>            // Standard Library: Provee exit() para terminar procesos en caso de error.
+#include <fcntl.h>             // File Control: Provee open() y flags como O_RDONLY para manipular archivos directos.
+#include <unistd.h>            // UNIX Standard: Provee las Syscalls vitales: fork(), pipe(), dup2(), read(), write(), execve().
+#include <sys/wait.h>          // Wait: Provee waitpid() para que el Padre sincronice y espere la muerte de sus Hijos.
+#include <sys/ioctl.h>         // I/O Control: Provee ioctl() para espiar cuántos bytes físicos hay dentro del Pipe.
+#include <sched.h>             // Scheduler: Provee sched_getcpu() para consultar en qué núcleo físico procesamos.
 
 #define BUFFER_SIZE 4096
 

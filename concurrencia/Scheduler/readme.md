@@ -124,7 +124,16 @@ if (algo == RR) {
 }
 ```
 
-La interrupción por *Quantum* se maneja durante la ejecución del proceso en la CPU:
+### ¿Qué es la interrupción por *Quantum* (Preemption / Desalojo)?
+En los algoritmos con *desalojo* (preemptivos) como Round Robin, el Sistema Operativo no confía en que el proceso devuelva el control de la CPU voluntariamente. En su lugar, se apoya en un **reloj de hardware** (*timer*) que genera una interrupción automática una vez que el tiempo máximo otorgado (el *Quantum*) expira.
+
+Cuando esta interrupción por *Quantum* ocurre, suceden varios pasos clave:
+1. **Pausa forzada**: El hardware interrumpe inmediatamente las instrucciones del programa y devuelve el control absoluto al Sistema Operativo.
+2. **Cambio de contexto (*Context Switch*)**: El SO guarda el progreso (registros, memoria) del proceso para poder reanudarlo después desde donde se quedó.
+3. **Reubicación**: El proceso pasa del estado `EJECUTANDO` a `ESPERANDO`, cediendo su lugar y formándose "al final de la fila".
+4. **Nueva asignación**: El planificador escoge al siguiente proceso de la cola y le da su propio turno en la CPU.
+
+A nivel de código en nuestra simulación, esta interrupción por *Quantum* se maneja verificando iterativamente si el tiempo que lleva el proceso en la CPU ha superado su límite asignado:
 
 ```c
 else if (algo == RR && procesos[p].tiempo_en_cpu_actual >= QUANTUM) {

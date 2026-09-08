@@ -27,7 +27,12 @@ stateDiagram-v2
 ```
 
 ```c
-typedef enum { ESPERANDO, EJECUTANDO, DURMIENDO, TERMINADO } Estado;
+typedef enum {
+    ESPERANDO,   // El proceso está listo para usar la CPU
+    EJECUTANDO,  // El proceso está actualmente usando la CPU
+    DURMIENDO,   // El proceso está bloqueado (ej. esperando E/S)
+    TERMINADO    // El proceso ha finalizado su ejecución
+} Estado;
 ```
 
 ## 1. FCFS (First-Come, First-Served)

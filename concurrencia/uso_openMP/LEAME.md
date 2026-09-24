@@ -36,7 +36,7 @@ La función **`explorar_otras_directivas`** muestra otras capacidades clave:
 
 ---
 
-## Lista de Directivas y Cláusulas de OpenMP (con Ejemplos)
+## Lista de Directivas y Cláusulas de OpenMP
 
 A continuación, un resumen de las directivas exploradas en el proyecto y otras fundamentales en OpenMP, acompañadas de ejemplos simples.
 

@@ -6,7 +6,7 @@ Este proyecto implementa el algoritmo clásico de **Codificación de Huffman** e
 
 ---
 
-## 🏛️ Conceptos Clave de Sistemas Operativos: Llamadas al Sistema (Syscalls)
+## Conceptos Clave de Sistemas Operativos: Llamadas al Sistema (Syscalls)
 
 En lugar de emplear las funciones de biblioteca de alto nivel de `stdio.h` (`fopen`, `fread`, `fwrite`), este proyecto emplea **llamadas al sistema del Kernel de Linux**:
 
@@ -27,7 +27,7 @@ Cada llamada al sistema implica un **cambio de contexto (Context Switch)** entre
 
 ---
 
-## 📁 Estructura del Proyecto
+## Estructura del Proyecto
 
 * [**`huffman.h`**](file:///home/edi/DOCENCIA2026/SO2026B/concurrencia/Huffman/Huffman_secuencia/huffman.h): Prototipos de funciones, inclusiones de llamadas al sistema (`<unistd.h>`, `<fcntl.h>`, `<sys/stat.h>`) y tipos de datos.
 * [**`huffman.c`**](file:///home/edi/DOCENCIA2026/SO2026B/concurrencia/Huffman/Huffman_secuencia/huffman.c): Implementación con llamadas al sistema (`open`, `read`, `write`, `lseek`, `close`, `stat`, `mkdir`) y explicaciones teóricas detalladas.
@@ -38,7 +38,7 @@ Cada llamada al sistema implica un **cambio de contexto (Context Switch)** entre
 
 ---
 
-## 🧩 Funciones Principales
+## Funciones Principales
 
 El proyecto sigue un diseño modular donde cada función cumple un objetivo pedagógico concreto:
 
@@ -96,7 +96,7 @@ El proyecto sigue un diseño modular donde cada función cumple un objetivo peda
 
 ---
 
-## 📂 Organización de Archivos de Salida
+## Organización de Archivos de Salida
 
 Para mantener ordenado el espacio de trabajo, el programa y los scripts dirigen los archivos generados a la carpeta `salidas/`:
 
@@ -104,7 +104,7 @@ Para mantener ordenado el espacio de trabajo, el programa y los scripts dirigen 
 * `salidas/<nombre>_recuperado.txt`: Archivo restaurado tras descompresión.
 * `salidas/registro_salidas.txt`: **Archivo de bitácora** donde se registran permanentemente todos los archivos de salida generados, su fecha, ruta y métricas.
 
-## 🛠️ Compilación y Ejecución
+## Compilación y Ejecución
 
 ### Ejecución Rápida y Demostración Automatizada:
 

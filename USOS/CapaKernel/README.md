@@ -1,4 +1,4 @@
-# Proyecto Docente: Arquitectura de la Capa Kernel y Optimización con `mmap`
+# Proyecto: Arquitectura de la Capa Kernel y Optimización con `mmap`
 
 > **Asignatura:** Sistemas Operativos (DOCENCIA 2026-B)  
 > **Tema:** Interacción Espacio de Usuario vs. Espacio de Kernel, Entrada/Salida Tradicional, Memoria Virtual y Mecanismo Zero-Copy con `mmap` y Drivers de Dispositivo.

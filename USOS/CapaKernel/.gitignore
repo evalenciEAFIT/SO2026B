@@ -1,0 +1,31 @@
+# Archivos binarios y de prueba
+*.bin
+*.dat
+
+# Objetos y compilación C
+*.o
+*.a
+*.so
+
+# Módulos del Kernel Linux
+*.ko
+*.mod
+*.mod.c
+*.mod.o
+*.order
+*.symvers
+.*.cmd
+.tmp_versions/
+Module.symvers
+modules.order
+
+# Ejecutables de usuario
+paso1_io_clasico/paso1_io_clasico
+paso2_mmap_usuario/paso2_mmap_usuario
+paso3_driver_copy_user/test_copy_user
+paso4_driver_mmap_kernel/test_mmap
+paso5_benchmark_comparativo/benchmark
+paso6_demand_paging_fault/test_demand_paging
+paso7_ipc_ringbuffer/producer
+paso7_ipc_ringbuffer/consumer
+herramientas/vma_inspector

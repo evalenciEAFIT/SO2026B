@@ -1,0 +1,211 @@
+==============================================================================
+ secure_mmap - bateria de ataques   Thu Nov 12 08:05:56 PM UTC 2026
+ kernel: 6.8.0-149-generic | usuario autorizado: sarai (uid 1000) | atacante: nobody
+==============================================================================
+
+[36m[T01] Uso legitimo: el usuario autorizado mapea y lee[0m
+      Usuario autorizado (uid=1000) lee 4 paginas descifradas:
+          "=== DOCUMENTO CONFIDENCIAL EAFIT-SO 2026-2 | pagina 0/255 ==="
+          "=== DOCUMENTO CONFIDENCIAL EAFIT-SO 2026-2 | pagina 3/255 ==="
+      RESULTADO: DEFENDIDO - uso legitimo funciona (texto plano solo para el autorizado)
+
+[36m[T02] nobody intenta mmap() de la boveda[0m
+      uid=65534 intenta mmap(PROT_READ, MAP_SHARED) de /dev/secure_mmap
+      mmap -> Permission denied
+      RESULTADO: DEFENDIDO - mmap() rechazado al no autorizado
+
+[36m[T03] nobody intenta read() de la boveda[0m
+      uid=65534 intenta read() de /dev/secure_mmap
+      read -> Permission denied
+      RESULTADO: DEFENDIDO - read() rechazado al no autorizado
+
+[36m[T04] Defensa LD_PRELOAD (usuario) sobre archivo normal: syscall directa la evade (se ESPERA VULNERABLE)[0m
+      [guard LD_PRELOAD] mmap() de /tmp/smm_test/secreto.txt BLOQUEADO en espacio de usuario
+      1) mmap() de libc (pasa por LD_PRELOAD): Permission denied
+      2) syscall(SYS_mmap) directa (ignora LD_PRELOAD): MAPEADO
+          "SECRETO REAL linea 1: clave=EAFIT-SO-2026"
+      RESULTADO: VULNERABLE - LD_PRELOAD fue evadido: una defensa en espacio de usuario no basta
+
+[36m[T05] Misma evasion LD_PRELOAD contra /dev/secure_mmap: el kernel la detiene[0m
+      [guard LD_PRELOAD] mmap() de /dev/secure_mmap BLOQUEADO en espacio de usuario
+      1) mmap() de libc (pasa por LD_PRELOAD): Permission denied
+      2) syscall(SYS_mmap) directa (ignora LD_PRELOAD): Permission denied
+      RESULTADO: DEFENDIDO - la defensa en el KERNEL detuvo la syscall directa
+
+[36m[T06] MAP_SHARED|PROT_WRITE con allow_write=0[0m
+      Intento: O_RDWR + mmap(PROT_READ|PROT_WRITE, MAP_SHARED)
+      mmap -> Operation not permitted
+      RESULTADO: DEFENDIDO - mapeo peligroso rechazado
+
+[36m[T07] MAP_PRIVATE|PROT_WRITE (Copy-On-Write)[0m
+      Intento: O_RDONLY + mmap(PROT_READ|PROT_WRITE, MAP_PRIVATE)
+      mmap -> Operation not permitted
+      RESULTADO: DEFENDIDO - mapeo peligroso rechazado
+
+[36m[T08] PROT_EXEC (inyeccion de codigo, W^X)[0m
+      Intento: mmap(PROT_READ|PROT_EXEC, MAP_SHARED)
+      mmap -> Operation not permitted
+      RESULTADO: DEFENDIDO - mapeo peligroso rechazado
+
+[36m[T09] Escalada RO -> RW con mprotect()[0m
+      Mapeo PROT_READ creado en 0x7f0749c42000. Intento: fd O_RDWR, mprotect(PROT_READ|PROT_WRITE)
+      mprotect -> Permission denied
+      RESULTADO: DEFENDIDO - no hay escalada de permisos (VM_MAYWRITE/VM_MAYEXEC retirados)
+
+[36m[T10] Escalada RO -> RX con mprotect()[0m
+      Mapeo PROT_READ creado en 0x7b0422b6f000. Intento: mprotect(PROT_READ|PROT_EXEC)
+      mprotect -> Permission denied
+      RESULTADO: DEFENDIDO - no hay escalada de permisos (VM_MAYWRITE/VM_MAYEXEC retirados)
+
+[36m[T11] Estilo Dirty COW: /proc/self/mem + madvise(MADV_DONTNEED)[0m
+      Hilo 1: pwrite(/proc/self/mem) sobre 0x7cd9f5451000 | Hilo 2: madvise(MADV_DONTNEED) (2 s)
+      Escrituras forzadas exitosas: 0 | fallidas: 347564 (Input/output error) | madvise: 481167
+      Contenido original intacto
+      RESULTADO: DEFENDIDO - FOLL_FORCE rechazado: sin COW ni escritura forzada
+
+[36m[T12] Otro proceso del mismo usuario lee el texto plano (process_vm_readv, /proc/pid/mem)[0m
+      Control (memoria anonima del hijo): leida
+      process_vm_readv sobre el mapeo protegido: Bad address
+      pread(/proc/5009/mem) sobre el mapeo protegido: Input/output error
+      RESULTADO: DEFENDIDO - VM_IO bloquea get_user_pages(): texto plano aislado del resto
+
+[36m[T13] Heredar el mapeo descifrado con fork()[0m
+      El hijo recibio SIGSEGV al tocar la direccion heredada
+      RESULTADO: DEFENDIDO - VM_DONTCOPY: fork() no hereda el texto plano
+
+[36m[T14] Partir (munmap/mprotect parcial) o crecer (mremap) el VMA[0m
+      munmap parcial -> Invalid argument
+      mprotect parcial -> Invalid argument
+      mremap crecer -> Bad address
+      RESULTADO: DEFENDIDO - VMA indivisible y de tamano fijo
+
+[36m[T15] Manipulacion del texto cifrado (root: echo "corrupt 3" > /proc/secure_mmap)[0m
+
+[36m[T15] Leer una pagina manipulada debe dar SIGBUS (integridad CRC32)[0m
+      Lectura de la pagina 3 -> SIGBUS
+      read() de la pagina 3 -> Input/output error
+      RESULTADO: DEFENDIDO - pagina manipulada detectada; no se entrego texto alterado
+
+[36m[T16] Carrera madvise(MADV_DONTNEED) vs escrituras en MAP_SHARED (allow_write=1)[0m
+      Escrituras: 13868238 | madvise(DONTNEED): 359041 | ultimo valor escrito: 13868238 | valor persistido: 13868238
+      RESULTADO: DEFENDIDO - sin escrituras perdidas ni corrupcion bajo la carrera
+
+[36m[T17] Auditoria de archivo REAL: mmap(RW, MAP_SHARED) de secreto.txt (kprobe)[0m
+      mmap(/tmp/smm_test/secreto.txt, RW, MAP_SHARED): OK
+      Bitacora del kernel:
+      [  638.977173] ALERTA kprobe: smm_attacks pid=5042 uid=1000 mmap(secreto.txt) prot=RW- flags=SHARED
+      RESULTADO: DEFENDIDO - el kprobe en security_mmap_file audito el mmap RW del archivo real
+
+[36m[T18] Pregunta 8: O_RDONLY + PROT_WRITE + MAP_PRIVATE sobre archivo normal (informativo)[0m
+      O_RDONLY + PROT_WRITE + MAP_SHARED : Permission denied
+      O_RDONLY + PROT_WRITE + MAP_PRIVATE: permitido
+      En la copia privada (COW) del proceso: "MODIFICADO-EN-RAM"
+      En el archivo real (page cache/disco): "archivo de root s"
+      RESULTADO: INFO - el kernel lo permite porque la escritura nunca vuelve al archivo
+
+==============================================================================
+ RESUMEN
+==============================================================================
+  [32mPASA[0m  T01  Uso legitimo: el usuario autorizado mapea y lee
+  [32mPASA[0m  T02  nobody intenta mmap() de la boveda
+  [32mPASA[0m  T03  nobody intenta read() de la boveda
+  [32mPASA[0m  T04  Defensa LD_PRELOAD (usuario) sobre archivo normal: syscall directa la evade (se ESPERA VULNERABLE)
+  [32mPASA[0m  T05  Misma evasion LD_PRELOAD contra /dev/secure_mmap: el kernel la detiene
+  [32mPASA[0m  T06  MAP_SHARED|PROT_WRITE con allow_write=0
+  [32mPASA[0m  T07  MAP_PRIVATE|PROT_WRITE (Copy-On-Write)
+  [32mPASA[0m  T08  PROT_EXEC (inyeccion de codigo, W^X)
+  [32mPASA[0m  T09  Escalada RO -> RW con mprotect()
+  [32mPASA[0m  T10  Escalada RO -> RX con mprotect()
+  [32mPASA[0m  T11  Estilo Dirty COW: /proc/self/mem + madvise(MADV_DONTNEED)
+  [32mPASA[0m  T12  Otro proceso del mismo usuario lee el texto plano (process_vm_readv, /proc/pid/mem)
+  [32mPASA[0m  T13  Heredar el mapeo descifrado con fork()
+  [32mPASA[0m  T14  Partir (munmap/mprotect parcial) o crecer (mremap) el VMA
+  [32mPASA[0m  T15  Leer una pagina manipulada debe dar SIGBUS (integridad CRC32)
+  [32mPASA[0m  T16  Carrera madvise(MADV_DONTNEED) vs escrituras en MAP_SHARED (allow_write=1)
+  [32mPASA[0m  T17  Auditoria de archivo REAL: mmap(RW, MAP_SHARED) de secreto.txt (kprobe)
+  [32mPASA[0m  T18  Pregunta 8: O_RDONLY + PROT_WRITE + MAP_PRIVATE sobre archivo normal (informativo)
+
+  Pruebas que pasan: 18 / 18
+
+=============================== /proc/secure_mmap ===============================
+================ secure_mmap: estado y auditoria ================
+allowed_uid            : 1000
+allow_write            : no
+verbose                : no
+paginas en la boveda   : 256 (1024 KiB)
+kprobe security_mmap_file: activo
+------------------------------ contadores ------------------------
+open()                         : 15
+mmap() permitidos              : 10
+DENEGADO por UID               : 3
+DENEGADO por banderas          : 3
+DENEGADO por rango             : 0
+page faults atendidos          : 82
+faults reusando pagina         : 75
+VIOLACIONES integridad         : 2
+paginas re-cifradas            : 1
+read() autorizados             : 2
+write() autorizados            : 1
+split de VMA negado            : 2
+kprobe: mmap archivo vigilado  : 2
+kprobe: ALERTAS (W/X)          : 1
+------------------- latencia de smm_fault (kernel) ---------------
+promedio (ns)          : 3155
+maximo (ns)            : 25521
+----------------------- ultimos eventos ---------------------------
+[  633.865737] modulo cargado (allowed_uid=1000 allow_write=0 paginas=256)
+[  633.905780] mmap OK pid=4940 smm_attacks uid=1000 paginas=0..3 PRIVATE RO
+[  633.944268] DENEGADO pid=4946 smm_attacks uid=65534: mmap() de UID no autorizado
+[  633.996131] DENEGADO pid=4952 smm_attacks uid=65534: read() de UID no autorizado
+[  634.037009] kprobe: smm_attacks pid=4958 uid=65534 mmap(secreto.txt) prot=R-- flags=SHARED
+[  634.081936] DENEGADO pid=4964 smm_attacks uid=65534: mmap() de UID no autorizado
+[  634.120070] DENEGADO pid=4970 smm_attacks uid=1000: MAP_SHARED|PROT_WRITE con allow_write=0
+[  634.160367] DENEGADO pid=4976 smm_attacks uid=1000: MAP_PRIVATE|PROT_WRITE (Copy-On-Write no permitido)
+[  634.194592] DENEGADO pid=4982 smm_attacks uid=1000: mmap() con PROT_EXEC (W^X)
+[  634.227332] mmap OK pid=4988 smm_attacks uid=1000 paginas=0..0 SHARED RO
+[  634.262727] mmap OK pid=4994 smm_attacks uid=1000 paginas=0..0 PRIVATE RO
+[  634.295037] mmap OK pid=5000 smm_attacks uid=1000 paginas=0..0 PRIVATE RO
+[  636.316297] mmap OK pid=5000 smm_attacks uid=1000 paginas=0..0 PRIVATE RO
+[  636.380799] mmap OK pid=5009 smm_attacks uid=1000 paginas=0..0 PRIVATE RO
+[  636.442010] mmap OK pid=5015 smm_attacks uid=1000 paginas=0..0 PRIVATE RO
+[  636.781019] mmap OK pid=5023 smm_attacks uid=1000 paginas=0..3 PRIVATE RO
+[  636.781028] pid=5023 intento partir el VMA en 0x7cff37677000 (munmap/mprotect parcial) -> EINVAL
+[  636.781087] pid=5023 intento partir el VMA en 0x7cff37677000 (munmap/mprotect parcial) -> EINVAL
+[  636.795026] ADMIN pid=4913 altero 1 byte cifrado de la pagina 3 (simulacion de manipulacion)
+[  636.845500] mmap OK pid=5029 smm_attacks uid=1000 paginas=3..3 PRIVATE RO
+[  636.845552] INTEGRIDAD VIOLADA pagina 3 (pid=5029 smm_attacks): CRC no coincide -> SIGBUS
+[  636.845691] INTEGRIDAD VIOLADA pagina 3 en read() pid=5029
+[  636.861364] ADMIN pid=4913 altero 1 byte cifrado de la pagina 3 (simulacion de manipulacion)
+[  636.917609] mmap OK pid=5035 smm_attacks uid=1000 paginas=0..0 SHARED RW
+[  638.925382] pid=5035 uid=1000: 1 pagina(s) modificadas re-cifradas al cerrar el mapeo
+[  638.925482] write() pid=5035 uid=1000: 64 bytes cifrados en la boveda
+[  638.977173] ALERTA kprobe: smm_attacks pid=5042 uid=1000 mmap(secreto.txt) prot=RW- flags=SHARED
+
+=============================== dmesg (ultimas lineas) ===============================
+[  472.385565] [secure_mmap] AUDIT mmap OK pid=4558 smm_bench uid=1000 paginas=0..4095 PRIVATE RO
+[  472.480328] [secure_mmap] AUDIT mmap OK pid=4558 smm_bench uid=1000 paginas=0..4095 PRIVATE RO
+[  472.543544] [secure_mmap] AUDIT mmap OK pid=4558 smm_bench uid=1000 paginas=0..4095 PRIVATE RO
+[  472.617281] [secure_mmap] AUDIT mmap OK pid=4558 smm_bench uid=1000 paginas=0..4095 PRIVATE RO
+[  472.691284] [secure_mmap] AUDIT mmap OK pid=4558 smm_bench uid=1000 paginas=0..4095 PRIVATE RO
+[  472.789090] [secure_mmap] AUDIT mmap OK pid=4558 smm_bench uid=1000 paginas=0..4095 PRIVATE RO
+[  477.613148] [secure_mmap] AUDIT mmap OK pid=4620 smm_bench uid=1000 paginas=0..7 PRIVATE RO
+[  477.613672] [secure_mmap] AUDIT mmap OK pid=4620 smm_bench uid=1000 paginas=0..7 PRIVATE RO
+[  633.601559] [secure_mmap] descargado; boveda y llave destruidas
+[  633.626020] [secure_mmap] boveda lista: 256 paginas cifradas con ctr-aes-aesni
+[  633.634078] [secure_mmap] kprobe en security_mmap_file activo; vigilando 'secreto.txt'
+[  633.634083] [secure_mmap] cargado: /dev/secure_mmap, allowed_uid=1000, allow_write=0, 256 paginas
+[  633.634089] [secure_mmap] AUDIT modulo cargado (allowed_uid=1000 allow_write=0 paginas=256)
+[  633.674114] [secure_mmap] AUDIT mmap OK pid=4940 smm_attacks uid=1000 paginas=0..3 PRIVATE RO
+[  633.712583] [secure_mmap] AUDIT DENEGADO pid=4946 smm_attacks uid=65534: mmap() de UID no autorizado
+[  633.764421] [secure_mmap] AUDIT DENEGADO pid=4952 smm_attacks uid=65534: read() de UID no autorizado
+[  633.805277] [secure_mmap] AUDIT kprobe: smm_attacks pid=4958 uid=65534 mmap(secreto.txt) prot=R-- flags=SHARED
+[  633.850181] [secure_mmap] AUDIT DENEGADO pid=4964 smm_attacks uid=65534: mmap() de UID no autorizado
+[  633.888296] [secure_mmap] AUDIT DENEGADO pid=4970 smm_attacks uid=1000: MAP_SHARED|PROT_WRITE con allow_write=0
+[  633.928573] [secure_mmap] AUDIT DENEGADO pid=4976 smm_attacks uid=1000: MAP_PRIVATE|PROT_WRITE (Copy-On-Write no permitido)
+[  633.962781] [secure_mmap] AUDIT DENEGADO pid=4982 smm_attacks uid=1000: mmap() con PROT_EXEC (W^X)
+[  633.995505] [secure_mmap] AUDIT mmap OK pid=4988 smm_attacks uid=1000 paginas=0..0 SHARED RO
+[  638.691214] [secure_mmap] AUDIT pid=5035 uid=1000: 1 pagina(s) modificadas re-cifradas al cerrar el mapeo
+[  638.691304] [secure_mmap] AUDIT write() pid=5035 uid=1000: 64 bytes cifrados en la boveda
+[  638.742972] [secure_mmap] AUDIT ALERTA kprobe: smm_attacks pid=5042 uid=1000 mmap(secreto.txt) prot=RW- flags=SHARED
+
+Log guardado en: /home/sarai/SO2026B-Parcial1/capakernel/results/attacks_20261112_200556.log

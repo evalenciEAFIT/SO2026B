@@ -1,0 +1,4 @@
+# Kbuild - lo lee el sistema de construccion del kernel (make -C $(KDIR) M=$(PWD))
+obj-m := secure_mmap.o
+secure_mmap-y := src/smm_main.o src/smm_vault.o src/smm_audit.o src/smm_kprobe.o
+ccflags-y := -I$(src)/include

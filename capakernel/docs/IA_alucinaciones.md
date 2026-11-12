@@ -1,6 +1,6 @@
 # Evidencia para la Parte II — verificación crítica de la IA
 
-Errores e imprecisiones de la IA (Claude) detectados durante el desarrollo, cómo se detectaron y cómo se corrigieron. Las secciones A, B y C son casos **reales** de esta conversación. La sección D lista las sugerencias típicas de LLMs que se verificaron y se descartaron.
+Errores e imprecisiones de la IA (Claude) detectados durante el desarrollo, cómo se detectaron y cómo se corrigieron. Las secciones A–D son casos **reales** de esta conversación. La sección E lista las sugerencias típicas de LLMs que se verificaron y se descartaron.
 
 **Procedimiento de validación usado:**
 
@@ -30,9 +30,18 @@ Errores e imprecisiones de la IA (Claude) detectados durante el desarrollo, cóm
 - **Realidad:** `uname -r` → `7.0.0-43-generic`. El instalador actualizó al kernel HWE más reciente.
 - **Corrección:** se instaló `linux-image-generic` (6.8, kernel GA de 24.04) y se fijó en GRUB (`GRUB_DEFAULT=saved`), porque el enunciado exige kernel 5.x/6.x.
 
+
+## D. Decisión de la IA que compila y funciona, pero es lenta (detectada midiendo)
+
+- **Qué generó la IA:** `crypto_alloc_sync_skcipher("ctr(aes)")` con la solicitud en la pila (`SYNC_SKCIPHER_REQUEST_ON_STACK`). Es correcto y pasó las 18 pruebas.
+- **Cómo se detectó:** `make bench` midió ~34 µs por page fault (`/proc/secure_mmap`) contra ~0.65 µs por página de un archivo normal. En ftrace (`function_graph`), `smm_vault_decrypt_page` se lleva ~97 % de `smm_fault`. El `dmesg` mostraba `ctr(aes-aesni)`.
+- **Causa:** en 6.8 la implementación rápida `ctr-aes-aesni` (AES-NI sobre la página completa) está registrada como **asíncrona** (envoltorio SIMD). La API *sync* la excluye, así que el kernel compone la plantilla genérica `ctr(...)` sobre el cifrador de **un bloque** `aes-aesni`: 256 llamadas por página, cada una con `kernel_fpu_begin/end`. Dentro de una VM sobre Hyper-V, guardar y restaurar la FPU es especialmente caro.
+- **Corrección:** `crypto_alloc_skcipher()` sin máscara de sincronía, `crypto_wait_req()` por si la respuesta es asíncrona, y una única `skcipher_request` preasignada y protegida por `vault_lock` (sin `kmalloc` en el page fault).
+- **Lección:** que compile y pase las pruebas no basta. La verificación de la IA también debe incluir medir.
+
 ---
 
-## D. Sugerencias típicas de LLMs verificadas y descartadas
+## E. Sugerencias típicas de LLMs verificadas y descartadas
 
 | Sugerencia | Por qué es incorrecta o insegura | Qué se hizo |
 |---|---|---|

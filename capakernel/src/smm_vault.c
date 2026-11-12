@@ -8,6 +8,16 @@
  * paginas descifradas bajo demanda (ver smm_main.c::smm_fault).
  *
  * Diseño criptografico:
+ *   - Implementacion: crypto_alloc_skcipher("ctr(aes)") SIN restringir a
+ *     algoritmos sincronos. En x86 la version rapida "ctr-aes-aesni" (AES-NI
+ *     sobre la pagina completa) se registra como asincrona; la API sincrona
+ *     (crypto_alloc_sync_skcipher) la excluye y cae en la plantilla generica
+ *     "ctr(aes-aesni)", que cifra bloque a bloque (16 B) guardando y
+ *     restaurando la FPU 256 veces por pagina: ~300 us/pagina medidos con
+ *     ftrace en la VM. Con la version asincrona + crypto_wait_req() el costo
+ *     cae a unos pocos microsegundos. Todas las llamadas ocurren en contexto
+ *     de proceso con vault_lock tomado, asi que se usa UNA sola solicitud
+ *     preasignada (sin kmalloc en la ruta del page fault).
  *   - Llave de 256 bits generada con get_random_bytes() al cargar el modulo.
  *     Se borra (memzero_explicit) apenas se instala en el tfm; solo queda la
  *     version expandida dentro del contexto de cifrado del kernel.
@@ -43,17 +53,21 @@ struct smm_vault_page {
 static struct smm_vault_page *vault;
 static unsigned int vault_n;
 static DEFINE_MUTEX(vault_lock);  /* serializa cifrado/descifrado de la boveda */
-static struct crypto_sync_skcipher *tfm;
+static struct crypto_skcipher *tfm;
+static struct skcipher_request *req;  /* unica solicitud, protegida por vault_lock */
 
 static u32 smm_crc(const void *buf)
 {
 	return crc32_le(~0U, buf, PAGE_SIZE);
 }
 
-/* AES-CTR de una pagina completa. En CTR cifrar y descifrar es la misma operacion. */
+/*
+ * AES-CTR de una pagina completa. En CTR cifrar y descifrar es la misma operacion.
+ * Llamar con vault_lock tomado (usa la solicitud compartida "req").
+ */
 static int smm_ctr_page(unsigned long idx, u32 gen, void *dst, const void *src)
 {
-	SYNC_SKCIPHER_REQUEST_ON_STACK(req, tfm);
+	DECLARE_CRYPTO_WAIT(wait);
 	struct scatterlist sg_src, sg_dst;
 	__be32 iv[4];
 	int ret;
@@ -66,11 +80,11 @@ static int smm_ctr_page(unsigned long idx, u32 gen, void *dst, const void *src)
 	sg_init_one(&sg_src, src, PAGE_SIZE);
 	sg_init_one(&sg_dst, dst, PAGE_SIZE);
 
-	skcipher_request_set_sync_tfm(req, tfm);
-	skcipher_request_set_callback(req, 0, NULL, NULL);
+	skcipher_request_set_callback(req, CRYPTO_TFM_REQ_MAY_BACKLOG | CRYPTO_TFM_REQ_MAY_SLEEP,
+				      crypto_req_done, &wait);
 	skcipher_request_set_crypt(req, &sg_src, &sg_dst, PAGE_SIZE, (u8 *)iv);
-	ret = crypto_skcipher_encrypt(req);
-	skcipher_request_zero(req);
+	/* Si el algoritmo responde asincronamente, dormimos hasta que termine. */
+	ret = crypto_wait_req(crypto_skcipher_encrypt(req), &wait);
 	memzero_explicit(iv, sizeof(iv));
 	return ret;
 }
@@ -211,7 +225,7 @@ int smm_vault_init(unsigned int npages)
 	if (!npages)
 		return -EINVAL;
 
-	tfm = crypto_alloc_sync_skcipher("ctr(aes)", 0, 0);
+	tfm = crypto_alloc_skcipher("ctr(aes)", 0, 0);
 	if (IS_ERR(tfm)) {
 		ret = PTR_ERR(tfm);
 		tfm = NULL;
@@ -220,10 +234,16 @@ int smm_vault_init(unsigned int npages)
 	}
 
 	get_random_bytes(key, sizeof(key));
-	ret = crypto_sync_skcipher_setkey(tfm, key, sizeof(key));
+	ret = crypto_skcipher_setkey(tfm, key, sizeof(key));
 	memzero_explicit(key, sizeof(key));
 	if (ret)
 		goto err_tfm;
+
+	req = skcipher_request_alloc(tfm, GFP_KERNEL);
+	if (!req) {
+		ret = -ENOMEM;
+		goto err_tfm;
+	}
 
 	vault = kvcalloc(npages, sizeof(*vault), GFP_KERNEL);
 	if (!vault) {
@@ -252,9 +272,8 @@ int smm_vault_init(unsigned int npages)
 	memzero_explicit(tmp, PAGE_SIZE);
 	free_page((unsigned long)tmp);
 
-	/* Ojo: no existe crypto_sync_skcipher_tfm(); el sync tfm envuelve un skcipher en ->base. */
 	pr_info(SMM_TAG "boveda lista: %u paginas cifradas con %s\n", npages,
-		crypto_skcipher_driver_name(&tfm->base));
+		crypto_skcipher_driver_name(tfm));
 	return 0;
 
 err_pages:
@@ -268,7 +287,9 @@ err_vault:
 	vault = NULL;
 	vault_n = 0;
 err_tfm:
-	crypto_free_sync_skcipher(tfm);
+	skcipher_request_free(req);
+	req = NULL;
+	crypto_free_skcipher(tfm);
 	tfm = NULL;
 	return ret;
 }
@@ -285,8 +306,10 @@ void smm_vault_exit(void)
 		vault = NULL;
 	}
 	vault_n = 0;
+	skcipher_request_free(req);
+	req = NULL;
 	if (tfm) {
-		crypto_free_sync_skcipher(tfm);
+		crypto_free_skcipher(tfm);
 		tfm = NULL;
 	}
 }

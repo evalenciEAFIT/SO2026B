@@ -1,0 +1,62 @@
+==============================================================================
+ LINEA BASE (sin defensa): ataques contra /dev/demo_demand_fault   Thu Nov 12 07:59:02 PM UTC 2026
+==============================================================================
+
+[36m[B02] nobody mmap()[0m
+      uid=65534 intenta mmap(PROT_READ, MAP_SHARED) de /dev/demo_demand_fault
+      Datos expuestos:
+          "[PAGINA_FISICA_0]: Hola! Esta es la pagina 0 del kernel."
+      RESULTADO: VULNERABLE - un usuario no autorizado leyo la region mapeada
+
+[36m[B07] MAP_PRIVATE|PROT_WRITE (COW)[0m
+      Intento: O_RDONLY + mmap(PROT_READ|PROT_WRITE, MAP_PRIVATE)
+      RESULTADO: VULNERABLE - el kernel acepto el mapeo peligroso
+
+[36m[B08] PROT_EXEC[0m
+      Intento: mmap(PROT_READ|PROT_EXEC, MAP_SHARED)
+      RESULTADO: VULNERABLE - el kernel acepto el mapeo peligroso
+
+[36m[B09] mprotect RO -> RW[0m
+      Mapeo PROT_READ creado en 0x72747ef0a000. Intento: fd O_RDWR, mprotect(PROT_READ|PROT_WRITE)
+      RESULTADO: VULNERABLE - mprotect() elevo los permisos despues del mmap()
+
+[36m[B10] mprotect RO -> RX[0m
+      Mapeo PROT_READ creado en 0x7911a0ab5000. Intento: mprotect(PROT_READ|PROT_EXEC)
+      RESULTADO: VULNERABLE - mprotect() elevo los permisos despues del mmap()
+
+[36m[B11] Dirty COW (/proc/self/mem)[0m
+      Hilo 1: pwrite(/proc/self/mem) sobre 0x76834977a000 | Hilo 2: madvise(MADV_DONTNEED) (2 s)
+      Escrituras forzadas exitosas: 256090 | fallidas: 0 (-) | madvise: 444377
+      Contenido original intacto
+      RESULTADO: VULNERABLE - FOLL_FORCE pudo escribir en un mapeo de solo lectura (copia COW)
+
+[36m[B12] process_vm_readv desde otro proceso[0m
+      Control (memoria anonima del hijo): leida
+      process_vm_readv sobre el mapeo protegido: LEIDO
+          "[PAGINA_FISICA_0]: Hola! Esta es la pagina 0 del kernel."
+      pread(/proc/3077/mem) sobre el mapeo protegido: LEIDO
+      RESULTADO: VULNERABLE - otro proceso leyo el texto plano descifrado
+
+[36m[B13] herencia por fork()[0m
+      Hijo leyo '[' del mapeo heredado
+      RESULTADO: VULNERABLE - el proceso hijo heredo el mapeo descifrado
+
+[36m[B14] partir/crecer el VMA[0m
+      munmap parcial: PERMITIDO
+      mremap crecer -> Bad address
+      RESULTADO: VULNERABLE - el VMA se pudo partir o crecer
+
+==============================================================================
+  [31mATAQUE EXITOSO[0m   B02 nobody mmap()
+  [31mATAQUE EXITOSO[0m   B07 MAP_PRIVATE|PROT_WRITE (COW)
+  [31mATAQUE EXITOSO[0m   B08 PROT_EXEC
+  [31mATAQUE EXITOSO[0m   B09 mprotect RO -> RW
+  [31mATAQUE EXITOSO[0m   B10 mprotect RO -> RX
+  [31mATAQUE EXITOSO[0m   B11 Dirty COW (/proc/self/mem)
+  [31mATAQUE EXITOSO[0m   B12 process_vm_readv desde otro proceso
+  [31mATAQUE EXITOSO[0m   B13 herencia por fork()
+  [31mATAQUE EXITOSO[0m   B14 partir/crecer el VMA
+
+  Ataques exitosos SIN secure_mmap: 9 / 9
+  (compare con: sudo ./scripts/run_attacks.sh)
+Log guardado en: /home/sarai/SO2026B-Parcial1/capakernel/results/baseline_20261112_195902.log

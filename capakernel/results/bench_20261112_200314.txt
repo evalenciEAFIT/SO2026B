@@ -1,0 +1,130 @@
+==============================================================================
+ secure_mmap - medicion de sobrecosto   Thu Nov 12 08:03:14 PM UTC 2026
+ kernel 6.8.0-149-generic | CPU:  AMD Ryzen 7 8840HS w/ Radeon 780M Graphics
+ 4096 paginas (16 MiB) | 10 repeticiones
+==============================================================================
+
+### 1. Tiempos de usuario (smm_bench)
+--- A) archivo normal en tmpfs (linea base)
+Objetivo: /dev/shm/smm_baseline.bin | 4096 paginas (16384 KiB) | 10 repeticiones (1 de calentamiento)
+modo            prom (us)    ns/pagina       MB/s    faults/iter
+mmap_cold          2270.9        554.4     7388.0          256.0
+CSV,/dev/shm/smm_baseline.bin,mmap_cold,4096,2270.9,554.4,7388.0,256.0
+mmap_scan          3733.6        911.5     4493.6          256.0
+CSV,/dev/shm/smm_baseline.bin,mmap_scan,4096,3733.6,911.5,4493.6,256.0
+read_full          2667.4        651.2     6289.7            0.0
+CSV,/dev/shm/smm_baseline.bin,read_full,4096,2667.4,651.2,6289.7,0.0
+--- B) /dev/secure_mmap
+Objetivo: /dev/secure_mmap | 4096 paginas (16384 KiB) | 10 repeticiones (1 de calentamiento)
+modo            prom (us)    ns/pagina       MB/s    faults/iter
+mmap_cold         88724.6      21661.3      189.1         4096.0
+CSV,/dev/secure_mmap,mmap_cold,4096,88724.6,21661.3,189.1,4096.0
+mmap_scan         64009.3      15627.3      262.1         4096.0
+CSV,/dev/secure_mmap,mmap_scan,4096,64009.3,15627.3,262.1,4096.0
+read_full         28859.4       7045.8      581.3            0.0
+CSV,/dev/secure_mmap,read_full,4096,28859.4,7045.8,581.3,0.0
+
+### 2. Latencia interna de smm_fault (medida con ktime_get_ns en el kernel)
+page faults atendidos          : 81920
+promedio (ns)          : 11290
+maximo (ns)            : 19134445
+
+### 3. perf stat (mmap_cold, 5 corridas)
+--- A) archivo normal
+
+ Performance counter stats for '/home/sarai/SO2026B-Parcial1/capakernel/build/smm_bench /dev/shm/smm_baseline.bin 4096 2 mmap_cold' (5 runs):
+
+               574      page-faults                      #   59.384 K/sec                       ( +-  0.07% )
+               574      minor-faults                     #   59.384 K/sec                       ( +-  0.07% )
+                 0      major-faults                     #    0.000 /sec                      
+                 5      context-switches                 #  517.283 /sec                        ( +-  8.94% )
+              9.67 msec task-clock                       #    0.851 CPUs utilized               ( +-  3.26% )
+
+           0.01136 +- 0.00249 seconds time elapsed  ( +- 21.92% )
+
+--- B) /dev/secure_mmap
+
+ Performance counter stats for '/home/sarai/SO2026B-Parcial1/capakernel/build/smm_bench /dev/secure_mmap 4096 2 mmap_cold' (5 runs):
+
+             8,255      page-faults                      #   63.004 K/sec                       ( +-  0.00% )
+             8,255      minor-faults                     #   63.004 K/sec                       ( +-  0.00% )
+                 0      major-faults                     #    0.000 /sec                      
+                11      context-switches                 #   83.954 /sec                        ( +-  6.03% )
+            131.02 msec task-clock                       #    0.965 CPUs utilized               ( +-  1.66% )
+
+           0.13581 +- 0.00439 seconds time elapsed  ( +-  3.23% )
+
+
+### 4. strace -c: syscalls de read() vs mmap() sobre /dev/secure_mmap
+--- read_full
+% time     seconds  usecs/call     calls    errors syscall
+------ ----------- ----------- --------- --------- ----------------
+ 99.92    0.054125         105       513           read
+  0.04    0.000024           6         4           openat
+  0.04    0.000020           5         4           close
+  0.00    0.000000           0         8           mmap
+  0.00    0.000000           0         1           munmap
+------ ----------- ----------- --------- --------- ----------------
+100.00    0.054169         102       530           total
+--- mmap_cold
+% time     seconds  usecs/call     calls    errors syscall
+------ ----------- ----------- --------- --------- ----------------
+ 98.19    0.003636        1212         3           munmap
+  0.78    0.000029           2        10           mmap
+  0.54    0.000020           5         4           close
+  0.49    0.000018           4         4           openat
+  0.00    0.000000           0         1           read
+------ ----------- ----------- --------- --------- ----------------
+100.00    0.003703         168        22           total
+
+### 5. strace -T: costo de la llamada mmap() en si (alta del VMA)
+--- A) archivo normal
+mmap(NULL, 65536, PROT_READ, MAP_SHARED, 3, 0) = 0x743dcf65a000 <0.000022>
+mmap(NULL, 65536, PROT_READ, MAP_SHARED, 3, 0) = 0x743dcf65a000 <0.000018>
+--- B) /dev/secure_mmap (incluye la verificacion de politica del modulo)
+mmap(NULL, 65536, PROT_READ, MAP_SHARED, 3, 0) = 0x726ce6d70000 <0.000026>
+mmap(NULL, 65536, PROT_READ, MAP_SHARED, 3, 0) = 0x726ce6d70000 <0.000026>
+
+### 6. ftrace function_graph de smm_fault (desglose de un page fault)
+ 0)               |  smm_fault [secure_mmap]() {
+ 0)   0.681 us    |    ktime_get();
+ 0)   0.771 us    |    mutex_lock();
+ 0)   4.358 us    |    alloc_pages();
+ 0) + 20.178 us   |    smm_vault_decrypt_page [secure_mmap]();
+ 0)   0.441 us    |    mutex_unlock();
+ 0)   0.431 us    |    smm_count [secure_mmap]();
+ 0)   0.481 us    |    ktime_get();
+ 0)   0.521 us    |    smm_fault_time [secure_mmap]();
+ 0) + 33.373 us   |  }
+ 0)               |  smm_fault [secure_mmap]() {
+ 0)   0.551 us    |    ktime_get();
+ 0)   0.681 us    |    mutex_lock();
+ 0)   3.778 us    |    alloc_pages();
+ 0) + 11.201 us   |    smm_vault_decrypt_page [secure_mmap]();
+ 0)   0.432 us    |    mutex_unlock();
+ 0)   0.471 us    |    smm_count [secure_mmap]();
+ 0)   0.481 us    |    ktime_get();
+ 0)   0.431 us    |    smm_fault_time [secure_mmap]();
+ 0) + 21.541 us   |  }
+ 0)               |  smm_fault [secure_mmap]() {
+ 0)   0.551 us    |    ktime_get();
+ 0)   0.671 us    |    mutex_lock();
+ 0)   3.767 us    |    alloc_pages();
+ 0) + 10.820 us   |    smm_vault_decrypt_page [secure_mmap]();
+ 0)   0.440 us    |    mutex_unlock();
+ 0)   0.421 us    |    smm_count [secure_mmap]();
+ 0)   0.471 us    |    ktime_get();
+ 0)   0.431 us    |    smm_fault_time [secure_mmap]();
+ 0) + 20.979 us   |  }
+ 0)               |  smm_fault [secure_mmap]() {
+ 0)   0.531 us    |    ktime_get();
+ 0)   0.662 us    |    mutex_lock();
+ 0)   3.747 us    |    alloc_pages();
+ 0) + 10.890 us   |    smm_vault_decrypt_page [secure_mmap]();
+ 0)   0.431 us    |    mutex_unlock();
+ 0)   0.431 us    |    smm_count [secure_mmap]();
+ 0)   0.461 us    |    ktime_get();
+ 0)   0.430 us    |    smm_fault_time [secure_mmap]();
+ 0) + 20.979 us   |  }
+
+Resultados guardados en: /home/sarai/SO2026B-Parcial1/capakernel/results/bench_20261112_200314.txt
